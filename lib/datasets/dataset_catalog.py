@@ -21,11 +21,17 @@ class DatasetCatalog(object):
             'ann_file': 'data/linemod/{}/occ.json'.format(cfg.cls_type),
             'split': 'test'
         },
-        'CustomTrain': {
-            'id': 'linemod',
-            'data_root': 'data/custom',
-            'ann_file': 'data/custom/train.json',
+        'CocoTrain': {
+            'id': 'coco',
+            'data_root': 'data/coco/images/train2017',
+            'ann_file': 'data/coco/annotations/person_keypoints_train2017.json',
             'split': 'train'
+        },
+        'CocoTest': {
+            'id': 'coco',
+            'data_root': 'data/coco/images/val2017',
+            'ann_file': 'data/coco/annotations/person_keypoints_val2017.json',
+            'split': 'test'
         }
     }
 

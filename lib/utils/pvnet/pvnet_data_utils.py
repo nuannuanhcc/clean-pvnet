@@ -34,7 +34,7 @@ def compute_vertex(mask, kpt_2d):
 
     vertex = kpt_2d[None] - xy[:, None]
     norm = np.linalg.norm(vertex, axis=2, keepdims=True)
-    norm[norm < 1e-3] += 1e-3
+    norm[norm < 1e-12] = 1e-12
     vertex = vertex / norm
 
     vertex_out = np.zeros([h, w, m, 2], np.float32)

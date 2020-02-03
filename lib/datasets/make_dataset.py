@@ -26,9 +26,8 @@ def make_dataset(cfg, dataset_name, transforms, is_train=True):
     dataset = _dataset_factory(data_source, cfg.task)
     del args['id']
     # args['cfg'] = cfg
-    if 'linemod' in data_source:
-        args['transforms'] = transforms
-        args['split'] = 'train' if is_train == True else 'test'
+    args['transforms'] = transforms
+    args['split'] = 'train' if is_train == True else 'test'
     # args['is_train'] = is_train
     dataset = dataset(**args)
     return dataset
@@ -69,18 +68,29 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, max_iter=-1):
 
     transforms = make_transforms(cfg, is_train)
     dataset = make_dataset(cfg, dataset_name, transforms, is_train)
-    sampler = make_data_sampler(dataset, shuffle)
-    batch_sampler = make_batch_data_sampler(cfg, sampler, batch_size, drop_last, max_iter, is_train)
-    num_workers = cfg.train.num_workers
-    if not is_train and cfg.test.dataset[:4] != 'City':
-        num_workers = 0
-    collator = make_collator(cfg)
-    data_loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_sampler=batch_sampler,
-        num_workers=num_workers,
-        collate_fn=collator,
-        worker_init_fn=worker_init_fn
-    )
+
+    if 'Coco' in dataset_name:
+        data_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=cfg.train.num_workers,
+            pin_memory=True
+        )
+
+    else:
+        sampler = make_data_sampler(dataset, shuffle)
+        batch_sampler = make_batch_data_sampler(cfg, sampler, batch_size, drop_last, max_iter, is_train)
+        num_workers = cfg.train.num_workers
+        if not is_train and cfg.test.dataset[:4] != 'City':
+            num_workers = 0
+        collator = make_collator(cfg)
+        data_loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_sampler=batch_sampler,
+            num_workers=num_workers,
+            collate_fn=collator,
+            worker_init_fn=worker_init_fn
+        )
 
     return data_loader

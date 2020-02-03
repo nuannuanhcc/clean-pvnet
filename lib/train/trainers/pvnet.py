@@ -1,7 +1,7 @@
 import torch.nn as nn
 from lib.utils import net_utils
 import torch
-
+from lib.config import cfg, args
 
 class NetworkWrapper(nn.Module):
     def __init__(self, net):
@@ -22,8 +22,18 @@ class NetworkWrapper(nn.Module):
             return output, loss, {}, {}
 
         weight = batch['mask'][:, None].float()
-        vote_loss = self.vote_crit(output['vertex'] * weight, batch['vertex'] * weight, reduction='sum')
-        vote_loss = vote_loss / weight.sum() / batch['vertex'].size(1)
+
+        if 'Coco' in cfg.train.dataset:
+            vote_loss = self.vote_crit(output['vertex'] * weight, batch['vertex'] * weight, reduction='none')
+            n, k, h, w = vote_loss.shape
+            vote_loss = vote_loss.view(n, k // 2, 2, h, w)
+            vis_vertex = batch['joints_vis'].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            vote_loss = (vote_loss * vis_vertex).sum()
+            vote_loss = vote_loss / weight.sum() / vis_vertex.sum()
+        else:
+            vote_loss = self.vote_crit(output['vertex'] * weight, batch['vertex'] * weight, reduction='sum')
+            vote_loss = vote_loss / weight.sum() / batch['vertex'].size(1)
+
         scalar_stats.update({'vote_loss': vote_loss})
         loss += vote_loss
 

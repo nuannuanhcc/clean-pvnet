@@ -27,7 +27,9 @@ cfg.resume = True
 cfg.save_ep = 5
 cfg.eval_ep = 5
 
-
+# dataset
+cfg.flip = True
+cfg.num_joints = 17
 # -----------------------------------------------------------------------------
 # train
 # -----------------------------------------------------------------------------
@@ -68,7 +70,7 @@ cfg.test.dataset = 'CocoVal'
 cfg.test.batch_size = 1
 cfg.test.epoch = -1
 cfg.test.icp = False
-
+cfg.test.use_gt_bbox = True
 # recorder
 cfg.record_dir = 'data/record'
 
@@ -83,7 +85,7 @@ cfg.cls_type = 'cat'
 
 
 _heads_factory = {
-    'pvnet': CN({'vote_dim': 18, 'seg_dim': 2}),
+    'pvnet': CN({'vote_dim': cfg.num_joints * 2, 'seg_dim': 2}),
     'ct': CN({'ct_hm': 30, 'wh': 2})
 }
 
