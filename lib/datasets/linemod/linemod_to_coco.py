@@ -132,23 +132,23 @@ def record_real_ann(model_meta, img_id, ann_id, images, annotations):
 
     for ind in tqdm.tqdm(inds):
         img_name = '{:06}.jpg'.format(ind)
-        rgb_path = os.path.join(rgb_dir, img_name)
+        rgb_path = os.path.join(rgb_dir, img_name)  # 'data/linemod/cat/JPEGImages/xxx.jpg'
         rgb = Image.open(rgb_path)
         img_size = rgb.size
         img_id += 1
         info = {'file_name': rgb_path, 'height': img_size[1], 'width': img_size[0], 'id': img_id}
         images.append(info)
 
-        pose_path = os.path.join(pose_dir, 'pose{}.npy'.format(ind))
+        pose_path = os.path.join(pose_dir, 'pose{}.npy'.format(ind))  # 'data/linemod/cat/pose/pose3.npy'
         pose = np.load(pose_path)
         corner_2d = project(corner_3d, K, pose)
         center_2d = project(center_3d[None], K, pose)[0]
         fps_2d = project(fps_3d, K, pose)
 
-        mask_path = os.path.join(data_root, cls, 'mask', '{:04d}.png'.format(ind))
+        mask_path = os.path.join(data_root, cls, 'mask', '{:04d}.png'.format(ind))  # 'data/linemod/cat/mask/xxx.png'
 
         ann_id += 1
-        depth_path = os.path.join('data/linemod_orig', cls, 'data', 'depth{}.dpt'.format(ind))
+        depth_path = os.path.join('data/linemod_orig', cls, 'data', 'depth{}.dpt'.format(ind))  # 'data/linemod_orig/cat/data/depth3.dpt'
         anno = {'mask_path': mask_path, 'depth_path': depth_path,
                 'image_id': img_id, 'category_id': 1, 'id': ann_id}
         anno.update({'corner_3d': corner_3d.tolist(), 'corner_2d': corner_2d.tolist()})
@@ -173,10 +173,10 @@ def record_fuse_ann(model_meta, img_id, ann_id, images, annotations):
 
     fuse_dir = os.path.join(data_root, 'fuse')
     original_K = linemod_K
-    ann_num = len(glob.glob(os.path.join(fuse_dir, '*.pkl')))
+    ann_num = len(glob.glob(os.path.join(fuse_dir, '*.pkl')))  # 'data/linemod/fuse/*.pkl'
     cls_idx = linemod_cls_names.index(cls)
     for ind in tqdm.tqdm(range(ann_num)):
-        mask_path = os.path.join(fuse_dir, '{}_mask.png'.format(ind))
+        mask_path = os.path.join(fuse_dir, '{}_mask.png'.format(ind))  # 'data/linemod/fuse/xxx_mask.png'
         mask_real = read_mask(mask_path, 'fuse', cls_idx + 1)
         if (np.sum(mask_real) < 400):
             continue
@@ -188,7 +188,7 @@ def record_fuse_ann(model_meta, img_id, ann_id, images, annotations):
         img_id += 1
         info = {'file_name': rgb_path, 'height': img_size[1], 'width': img_size[0], 'id': img_id}
 
-        begins, poses = read_pickle(os.path.join(fuse_dir, '{}_info.pkl'.format(ind)))
+        begins, poses = read_pickle(os.path.join(fuse_dir, '{}_info.pkl'.format(ind)))  # 'data/linemod/fuse/xxx_info.pkl'
         pose = poses[cls_idx]
         K = original_K.copy()
         K[0, 2] += begins[cls_idx, 1]
@@ -222,11 +222,11 @@ def record_render_ann(model_meta, img_id, ann_id, images, annotations):
     K = model_meta['K']
 
     render_dir = os.path.join(data_root, 'renders', cls)
-    ann_num = len(glob.glob(os.path.join(render_dir, '*.pkl')))
+    ann_num = len(glob.glob(os.path.join(render_dir, '*.pkl')))  # 'data/linemod/renders/cat/*.pkl'
     K = blender_K
     for ind in tqdm.tqdm(range(ann_num)):
         img_name = '{}.jpg'.format(ind)
-        rgb_path = os.path.join(render_dir, img_name)
+        rgb_path = os.path.join(render_dir, img_name)  # 'data/linemod/renders/cat/xxx.jpg'
         rgb = Image.open(rgb_path)
         img_size = rgb.size
         img_id += 1
@@ -256,14 +256,14 @@ def record_render_ann(model_meta, img_id, ann_id, images, annotations):
 
 def _linemod_to_coco(cls, split):
     data_root = 'data/linemod'
-    model_path = os.path.join(data_root, cls, cls+'.ply')
+    model_path = os.path.join(data_root, cls, cls+'.ply')  # 'data/linemod/cat/cat.ply'
 
     renderer = OpenGLRenderer(model_path)
-    K = linemod_K
+    K = linemod_K #
 
-    model = renderer.model['pts'] / 1000
-    corner_3d = get_model_corners(model)
-    center_3d = (np.max(corner_3d, 0) + np.min(corner_3d, 0)) / 2
+    model = renderer.model['pts'] / 1000  # (94404, 3)
+    corner_3d = get_model_corners(model)  # (8, 3)
+    center_3d = (np.max(corner_3d, 0) + np.min(corner_3d, 0)) / 2  # (3,)
     fps_3d = np.loadtxt(os.path.join(data_root, cls, 'farthest.txt'))
 
     model_meta = {
@@ -295,11 +295,11 @@ def _linemod_to_coco(cls, split):
 
     anno_path = os.path.join(data_root, cls, split + '.json')
     with open(anno_path, 'w') as f:
-        json.dump(instance, f)
+        json.dump(instance, f)  # 'data/linemod/cat/train.json'
 
 
 def linemod_to_coco(cfg, only_test=False):
     if not only_test:
-        _linemod_to_coco(cfg.cls_type, 'train')
+        _linemod_to_coco(cfg.cls_type, 'train') #
     _linemod_to_coco(cfg.cls_type, 'test')
     _linemod_to_coco(cfg.cls_type, 'occ')

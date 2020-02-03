@@ -71,24 +71,24 @@ class OpenGLRenderer(object):
 
         # Prepare data structures
         model = {}
-        model['pts'] = np.zeros((n_pts, 3), np.float)
+        model['pts'] = np.zeros((n_pts, 3), np.float)  # (94404, 3)
         if n_faces > 0:
-            model['faces'] = np.zeros((n_faces, face_n_corners), np.float)
+            model['faces'] = np.zeros((n_faces, face_n_corners), np.float)  # (31468, 3)
 
         pt_props_names = [p[0] for p in pt_props]
         is_normal = False
         if {'nx', 'ny', 'nz'}.issubset(set(pt_props_names)):
             is_normal = True
-            model['normals'] = np.zeros((n_pts, 3), np.float)
+            model['normals'] = np.zeros((n_pts, 3), np.float)  # (94404, 3)
 
         is_color = False
         model['colors'] = np.zeros((n_pts, 3), np.float)
         if {'red', 'green', 'blue'}.issubset(set(pt_props_names)):
             is_color = True
-            model['colors'] = np.zeros((n_pts, 3), np.float)
+            model['colors'] = np.zeros((n_pts, 3), np.float)  # (94404, 3)
 
         is_texture = False
-        if {'texture_u', 'texture_v'}.issubset(set(pt_props_names)):
+        if {'texture_u', 'texture_v'}.issubset(set(pt_props_names)):  # false
             is_texture = True
             model['texture_uv'] = np.zeros((n_pts, 2), np.float)
 
@@ -110,7 +110,7 @@ class OpenGLRenderer(object):
                     val = struct.unpack(format[0], f.read(format[1]))[0]
                     if prop[0] in load_props:
                         prop_vals[prop[0]] = val
-            else:
+            else:  # false
                 elems = f.readline().rstrip('\n').rstrip('\r').split()
                 for prop_id, prop in enumerate(pt_props):
                     if prop[0] in load_props:

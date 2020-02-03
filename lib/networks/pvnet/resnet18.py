@@ -69,23 +69,25 @@ class Resnet18(nn.Module):
         kpt_2d = ransac_voting_layer_v3(mask, vertex, 128, inlier_thresh=0.99, max_num=100)
         output.update({'mask': mask, 'kpt_2d': kpt_2d})
 
-    def forward(self, x, feature_alignment=False):
+    def forward(self, x, feature_alignment=False):  # [32, 3, 432, 448])
+
         x2s, x4s, x8s, x16s, x32s, xfc = self.resnet18_8s(x)
 
-        fm=self.conv8s(torch.cat([xfc,x8s],1))
-        fm=self.up8sto4s(fm)
+        fm=self.conv8s(torch.cat([xfc,x8s],1))  # [32, 128, 54, 56]
+        fm=self.up8sto4s(fm)  # [32, 128, 108, 112]
         if fm.shape[2]==136:
             fm = nn.functional.interpolate(fm, (135,180), mode='bilinear', align_corners=False)
 
-        fm=self.conv4s(torch.cat([fm,x4s],1))
-        fm=self.up4sto2s(fm)
+        fm=self.conv4s(torch.cat([fm,x4s],1))  # [32, 64, 108, 112]
+        fm=self.up4sto2s(fm)  # [32, 64, 216, 224]
 
-        fm=self.conv2s(torch.cat([fm,x2s],1))
-        fm=self.up2storaw(fm)
+        fm=self.conv2s(torch.cat([fm,x2s],1))  # [32, 32, 216, 224]
+        fm=self.up2storaw(fm)  # [32, 32, 432, 448]
 
-        x=self.convraw(torch.cat([fm,x],1))
-        seg_pred=x[:,:self.seg_dim,:,:]
-        ver_pred=x[:,self.seg_dim:,:,:]
+        x=self.convraw(torch.cat([fm,x],1))  # [32, 20, 432, 448]
+
+        seg_pred=x[:,:self.seg_dim,:,:]  # [32, 2, 432, 448]
+        ver_pred=x[:,self.seg_dim:,:,:]  # [32, 18, 432, 448]
 
         ret = {'seg': seg_pred, 'vertex': ver_pred}
 
