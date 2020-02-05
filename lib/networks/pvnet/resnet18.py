@@ -2,7 +2,7 @@ from torch import nn
 import torch
 from torch.nn import functional as F
 from .resnet import resnet18
-from lib.csrc.ransac_voting.ransac_voting_gpu import ransac_voting_layer, ransac_voting_layer_v3
+from lib.csrc.ransac_voting.ransac_voting_gpu import ransac_voting_layer, ransac_voting_layer_v3, estimate_voting_distribution_with_mean
 
 
 class Resnet18(nn.Module):
@@ -67,6 +67,8 @@ class Resnet18(nn.Module):
         vertex = vertex.view(b, h, w, vn_2//2, 2)
         mask = torch.argmax(output['seg'], 1)
         kpt_2d = ransac_voting_layer_v3(mask, vertex, 128, inlier_thresh=0.99, max_num=100)
+
+        # mean, var = estimate_voting_distribution_with_mean(mask, vertex, kpt_2d)
         output.update({'mask': mask, 'kpt_2d': kpt_2d})
 
     def forward(self, x, feature_alignment=False):  # [32, 3, 432, 448])

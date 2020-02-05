@@ -14,7 +14,8 @@ def train(cfg, network):
     optimizer = make_optimizer(cfg, network)
     scheduler = make_lr_scheduler(cfg, optimizer)
     recorder = make_recorder(cfg)
-    # evaluator = make_evaluator(cfg)
+    if 'Coco' not in cfg.train.dataset:
+        evaluator = make_evaluator(cfg)
 
     begin_epoch = load_model(network, optimizer, scheduler, recorder, cfg.model_dir, resume=cfg.resume)
     # set_lr_scheduler(cfg, scheduler)
@@ -31,8 +32,11 @@ def train(cfg, network):
         if (epoch + 1) % cfg.save_ep == 0:
             save_model(network, optimizer, scheduler, recorder, epoch, cfg.model_dir)
 
-        # if (epoch + 1) % cfg.eval_ep == 0:
-        #     trainer.val(epoch, val_loader, evaluator, recorder)
+        if (epoch + 1) % cfg.eval_ep == 0:
+            if 'Coco' in cfg.train.dataset:
+                trainer.val_coco(val_loader)
+            else:
+                trainer.val(epoch, val_loader, evaluator, recorder)
 
     return network
 
@@ -46,7 +50,6 @@ def test(cfg, network):
 
 
 def main():
-    print('#######',cfg.train.batch_size)
     network = make_network(cfg)
     if args.test:
         test(cfg, network)

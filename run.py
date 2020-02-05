@@ -63,19 +63,24 @@ def run_evaluate():
     import torch
     from lib.networks import make_network
     from lib.utils.net_utils import load_network
+    from lib.train import make_trainer
 
     network = make_network(cfg).cuda()
     load_network(network, cfg.model_dir, epoch=cfg.test.epoch)
+    trainer = make_trainer(cfg, network)
     network.eval()
 
     data_loader = make_data_loader(cfg, is_train=False)
-    evaluator = make_evaluator(cfg)
-    for batch in tqdm.tqdm(data_loader):
-        inp = batch['inp'].cuda()
-        with torch.no_grad():
-            output = network(inp)
-        evaluator.evaluate(output, batch)
-    evaluator.summarize()
+    if 'Coco' in cfg.train.dataset:
+        trainer.val_coco(data_loader)
+    else:
+        evaluator = make_evaluator(cfg)
+        for batch in tqdm.tqdm(data_loader):
+            inp = batch['inp'].cuda()
+            with torch.no_grad():
+                output = network(inp)
+            evaluator.evaluate(output, batch)
+        evaluator.summarize()
 
 
 def run_visualize():

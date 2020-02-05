@@ -1,5 +1,6 @@
 import torch.utils.data as data
 from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 import numpy as np
 import os
 from PIL import Image
@@ -9,13 +10,17 @@ from lib.datasets.augmentation import crop_or_padding_to_fixed_size, rotate_inst
 import random
 import torch
 from lib.config import cfg
-
+from collections import defaultdict
+from collections import OrderedDict
 from lib.utils.transform_utils import get_affine_transform, affine_transform, fliplr_joints
+from lib.utils.coco_utils import oks_nms
 from pycocotools import mask as maskUtils
 import copy
 import random
 import cv2
 import logging
+import pickle
+import json_tricks as json
 logger = logging.getLogger(__name__)
 
 class Dataset(data.Dataset):
@@ -23,6 +28,7 @@ class Dataset(data.Dataset):
         super(Dataset, self).__init__()
 
         self.data_root = data_root
+        self.image_set = data_root.split('/')[-1]
         self.split = split
 
         self.coco = COCO(ann_file)
@@ -38,6 +44,9 @@ class Dataset(data.Dataset):
 
         self.scale_factor = 0.3
         self.rotation_factor = 40
+
+        self.in_vis_thre = 0.2
+        self.oks_thre = 0.9
 
         # deal with class names
         cats = [cat['name']
@@ -260,8 +269,10 @@ class Dataset(data.Dataset):
             'score': score,
             'mask': mask
         }
-
-        return ret
+        if 'Coco' in cfg.test.dataset and self.split == 'test':
+            return ret, meta
+        else:
+            return ret
 
 
     def annToMask(self, db_rec):
@@ -316,3 +327,140 @@ class Dataset(data.Dataset):
         return db_selected
 
 
+    def evaluate(self, cfg, preds, result_dir, all_boxes, img_path,
+                 *args, **kwargs):
+
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
+        res_file = os.path.join(
+            result_dir, 'keypoints_%s_results.json' % self.image_set)
+
+        # person x (keypoints)
+        _kpts = []
+        for idx, kpt in enumerate(preds):
+            _kpts.append({
+                'keypoints': kpt,
+                'center': all_boxes[idx][0:2],
+                'scale': all_boxes[idx][2:4],
+                'area': all_boxes[idx][4],
+                'score': all_boxes[idx][5],
+                'image': int(img_path[idx][-16:-4])
+            })
+        # image x person x (keypoints)
+        kpts = defaultdict(list)
+        for kpt in _kpts:
+            kpts[kpt['image']].append(kpt)
+
+        # rescoring and oks nms
+        num_joints = self.num_joints
+        in_vis_thre = self.in_vis_thre
+        oks_thre = self.oks_thre
+        oks_nmsed_kpts = []
+        for img in kpts.keys():
+            img_kpts = kpts[img]
+            for n_p in img_kpts:
+                box_score = n_p['score']
+                kpt_score = 0
+                valid_num = 0
+                for n_jt in range(0, num_joints):
+                    t_s = n_p['keypoints'][n_jt][2]
+                    if t_s > in_vis_thre:
+                        kpt_score = kpt_score + t_s
+                        valid_num = valid_num + 1
+                if valid_num != 0:
+                    kpt_score = kpt_score / valid_num
+                # rescoring
+                n_p['score'] = kpt_score * box_score
+            keep = oks_nms([img_kpts[i] for i in range(len(img_kpts))],
+                           oks_thre)
+            if len(keep) == 0:
+                oks_nmsed_kpts.append(img_kpts)
+            else:
+                oks_nmsed_kpts.append([img_kpts[_keep] for _keep in keep])
+
+        self._write_coco_keypoint_results(
+            oks_nmsed_kpts, res_file)
+        if 'test' not in self.image_set:
+            info_str = self._do_python_keypoint_eval(
+                res_file, result_dir)
+            name_value = OrderedDict(info_str)
+            return name_value, name_value['AP']
+        else:
+            return {'Null': 0}, 0
+
+    def _write_coco_keypoint_results(self, keypoints, res_file):
+        data_pack = [{'cat_id': self._class_to_coco_ind[cls],
+                      'cls_ind': cls_ind,
+                      'cls': cls,
+                      'ann_type': 'keypoints',
+                      'keypoints': keypoints
+                      }
+                     for cls_ind, cls in enumerate(self.classes) if not cls == '__background__']
+
+        results = self._coco_keypoint_results_one_category_kernel(data_pack[0])
+        logger.info('=> Writing results json to %s' % res_file)
+        with open(res_file, 'w') as f:
+            json.dump(results, f, sort_keys=True, indent=4)
+        try:
+            json.load(open(res_file))
+        except Exception:
+            content = []
+            with open(res_file, 'r') as f:
+                for line in f:
+                    content.append(line)
+            content[-1] = ']'
+            with open(res_file, 'w') as f:
+                for c in content:
+                    f.write(c)
+
+    def _coco_keypoint_results_one_category_kernel(self, data_pack):
+        cat_id = data_pack['cat_id']
+        keypoints = data_pack['keypoints']
+        cat_results = []
+
+        for img_kpts in keypoints:
+            if len(img_kpts) == 0:
+                continue
+
+            _key_points = np.array([img_kpts[k]['keypoints']
+                                    for k in range(len(img_kpts))])
+            key_points = np.zeros(
+                (_key_points.shape[0], self.num_joints * 3), dtype=np.float)
+
+            for ipt in range(self.num_joints):
+                key_points[:, ipt * 3 + 0] = _key_points[:, ipt, 0]
+                key_points[:, ipt * 3 + 1] = _key_points[:, ipt, 1]
+                key_points[:, ipt * 3 + 2] = _key_points[:, ipt, 2]  # keypoints score.
+
+            result = [{'image_id': img_kpts[k]['image'],
+                       'category_id': cat_id,
+                       'keypoints': list(key_points[k]),
+                       'score': img_kpts[k]['score'],
+                       'center': list(img_kpts[k]['center']),
+                       'scale': list(img_kpts[k]['scale'])
+                       } for k in range(len(img_kpts))]
+            cat_results.extend(result)
+
+        return cat_results
+
+    def _do_python_keypoint_eval(self, res_file, res_folder):
+        coco_dt = self.coco.loadRes(res_file)
+        coco_eval = COCOeval(self.coco, coco_dt, 'keypoints')
+        coco_eval.params.useSegm = None
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+        stats_names = ['AP', 'Ap .5', 'AP .75', 'AP (M)', 'AP (L)', 'AR', 'AR .5', 'AR .75', 'AR (M)', 'AR (L)']
+
+        info_str = []
+        for ind, name in enumerate(stats_names):
+            info_str.append((name, coco_eval.stats[ind]))
+
+        eval_file = os.path.join(
+            res_folder, 'keypoints_%s_results.pkl' % self.image_set)
+
+        with open(eval_file, 'wb') as f:
+            pickle.dump(coco_eval, f, pickle.HIGHEST_PROTOCOL)
+        logger.info('=> coco eval results saved to %s' % eval_file)
+
+        return info_str

@@ -3,8 +3,9 @@ import datetime
 import torch
 import tqdm
 from torch.nn import DataParallel
-
-
+import numpy as np
+from lib.config import cfg, args
+from lib.utils.transform_utils import transform_preds
 class Trainer(object):
     def __init__(self, network):
         network = network.cuda()
@@ -100,4 +101,45 @@ class Trainer(object):
 
         if recorder:
             recorder.record('val', epoch, val_loss_stats, image_stats)
+
+
+    def val_coco(self, data_loader):
+        self.network.eval()
+        torch.cuda.empty_cache()
+        num_samples = len(data_loader)
+        all_preds = np.zeros((num_samples, cfg.num_joints, 3),
+                             dtype=np.float32)
+        all_boxes = np.zeros((num_samples, 6))
+        image_path = []
+        filenames = []
+        imgnums = []
+        idx = 0
+        with torch.no_grad():
+            for batch, meta in tqdm.tqdm(data_loader):
+                for k in batch:
+                    if k != 'meta':
+                        batch[k] = batch[k].cuda()
+                output, loss, loss_stats, image_stats = self.network(batch)
+                num_images = batch['inp'].size(0)
+                c = meta['center'].numpy()
+                s = meta['scale'].numpy()
+                score = meta['score'].numpy()
+                preds = output['kpt_2d'][:, :, 0:2].cpu().numpy().copy()
+                for i in range(output['kpt_2d'].shape[0]):
+                    preds[i] = transform_preds(output['kpt_2d'][:, :, 0:2][i], c[i], s[i],
+                                               [192, 256])
+                all_preds[idx:idx + num_images, :, 0:2] = preds
+                # all_preds[idx:idx + num_images, :, 2:3] = maxvals
+                # double check this all_boxes parts
+                all_boxes[idx:idx + num_images, 0:2] = c[:, 0:2]
+                all_boxes[idx:idx + num_images, 2:4] = s[:, 0:2]
+                all_boxes[idx:idx + num_images, 4] = np.prod(s * 200, 1)
+                all_boxes[idx:idx + num_images, 5] = score
+                image_path.extend(meta['image'])
+                idx += num_images
+        name_values, perf_indicator = data_loader.dataset.evaluate(
+                    cfg, all_preds, cfg.result_dir, all_boxes, image_path,
+                    filenames, imgnums)
+
+
 
