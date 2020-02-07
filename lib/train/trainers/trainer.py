@@ -6,6 +6,8 @@ from torch.nn import DataParallel
 import numpy as np
 from lib.config import cfg, args
 from lib.utils.transform_utils import transform_preds
+import neptune
+
 class Trainer(object):
     def __init__(self, network):
         network = network.cuda()
@@ -26,7 +28,7 @@ class Trainer(object):
                 batch[k] = batch[k].cuda()
         return batch
 
-    def train(self, epoch, data_loader, optimizer, recorder):
+    def train(self, epoch, data_loader, optimizer, recorder, global_steps):
         max_iter = len(data_loader)
         self.network.train()
         end = time.time()
@@ -69,6 +71,14 @@ class Trainer(object):
                 recorder.update_image_stats(image_stats)
                 recorder.record('train')
 
+                if global_steps:
+                    neptune_step = global_steps['train_global_steps']
+                    neptune.send_metric('train_loss', neptune_step, recorder.loss_stats['loss'].avg)
+                    neptune.send_metric('train_loss_seg', neptune_step, recorder.loss_stats['seg_loss'].avg)
+                    neptune.send_metric('train_loss_vote', neptune_step, recorder.loss_stats['vote_loss'].avg)
+                    global_steps['train_global_steps'] = neptune_step + 1
+
+
     def val(self, epoch, data_loader, evaluator=None, recorder=None):
         self.network.eval()
         torch.cuda.empty_cache()
@@ -103,9 +113,10 @@ class Trainer(object):
             recorder.record('val', epoch, val_loss_stats, image_stats)
 
 
-    def val_coco(self, data_loader):
+    def val_coco(self, data_loader, global_steps=None):
         self.network.eval()
         torch.cuda.empty_cache()
+        val_loss_stats = {}
         num_samples = len(data_loader)
         all_preds = np.zeros((num_samples, cfg.num_joints, 3),
                              dtype=np.float32)
@@ -137,9 +148,21 @@ class Trainer(object):
                 all_boxes[idx:idx + num_images, 5] = score
                 image_path.extend(meta['image'])
                 idx += num_images
+
+                loss_stats = self.reduce_loss_stats(loss_stats)
+                for k, v in loss_stats.items():
+                    val_loss_stats.setdefault(k, 0)
+                    val_loss_stats[k] += v
+
         name_values, perf_indicator = data_loader.dataset.evaluate(
                     cfg, all_preds, cfg.result_dir, all_boxes, image_path,
                     filenames, imgnums)
 
-
-
+        if global_steps:
+            neptune_step = global_steps['valid_global_steps']
+            neptune.send_metric('valid_loss', neptune_step, (val_loss_stats['loss']/num_samples).item())
+            neptune.send_metric('valid_loss_seg', neptune_step, (val_loss_stats['seg_loss']/num_samples).item())
+            neptune.send_metric('valid_loss_vote', neptune_step, (val_loss_stats['vote_loss']/num_samples).item())
+            for k, v in name_values.items():
+                neptune.send_metric(k, neptune_step, v)
+            global_steps['valid_global_steps'] = neptune_step + 1

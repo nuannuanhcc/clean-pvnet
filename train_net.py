@@ -5,6 +5,7 @@ from lib.datasets import make_data_loader
 from lib.utils.net_utils import load_model, save_model, load_network
 from lib.evaluators import make_evaluator
 import torch.multiprocessing
+import neptune
 
 
 def train(cfg, network):
@@ -24,9 +25,21 @@ def train(cfg, network):
     val_loader = make_data_loader(cfg, is_train=False)
     # train_loader = make_data_loader(cfg, is_train=True, max_iter=100)
 
+    global_steps = None
+    if cfg.neptune:
+        global_steps = {
+            'train_global_steps': 0,
+            'valid_global_steps': 0,
+        }
+
+        neptune.init('hccccccccc/clean-pvnet')
+        neptune.create_experiment(cfg.model_dir.split('/')[-1])
+        neptune.append_tag('pose')
+
+
     for epoch in range(begin_epoch, cfg.train.epoch):
         recorder.epoch = epoch
-        trainer.train(epoch, train_loader, optimizer, recorder)
+        trainer.train(epoch, train_loader, optimizer, recorder, global_steps)
         scheduler.step()
 
         if (epoch + 1) % cfg.save_ep == 0:
@@ -34,9 +47,12 @@ def train(cfg, network):
 
         if (epoch + 1) % cfg.eval_ep == 0:
             if 'Coco' in cfg.train.dataset:
-                trainer.val_coco(val_loader)
+                trainer.val_coco(val_loader, global_steps)
             else:
                 trainer.val(epoch, val_loader, evaluator, recorder)
+
+    if cfg.neptune:
+        neptune.stop()
 
     return network
 
